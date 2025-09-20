@@ -11,7 +11,7 @@ import touristsRoutes from './routes/tourists.js';
 import reviewsRoutes from './routes/reviews.js';
 import paymentsRoutes from './routes/payments.js';
 import adminRoutes from './routes/admin.js';
-import productsRoutes from './routes/products.js'; // Added products route
+import productsRoutes from './routes/products.js';
 import Contact from './models/Contact.js';
 import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth.js';
 
@@ -19,9 +19,11 @@ dotenv.config();
 
 const app = express();
 
+// CORS configuration
 const allowedOrigins = [
-  'https://jeep-booking-frontend.vercel.app',
-  'http://localhost:3000'
+  'https://jeep-frontend.vercel.app', // Frontend Vercel URL
+  'https://jeep-ten.vercel.app',     // Backend Vercel URL (if needed)
+  'http://localhost:3000'            // Local development
 ];
 
 app.use(cors({
@@ -34,6 +36,8 @@ app.use(cors({
   },
   credentials: true
 }));
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
@@ -47,7 +51,7 @@ app.use('/api/tourists', touristsRoutes);
 app.use('/api/reviews', reviewsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/products', productsRoutes); // Added products route
+app.use('/api/products', productsRoutes);
 
 // Route for fetching contact messages
 app.get('/api/admin/contact-messages', authenticateToken, adminMiddleware, async (req, res) => {
@@ -76,11 +80,20 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'OK', message: 'Backend is running' });
+});
+
 // MongoDB Connection
 mongoose.connect(env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err.message));
 
-// Start Server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err.message);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+export default app;
