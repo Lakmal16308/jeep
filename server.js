@@ -1,7 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import env from './config/env.js';
 import authRoutes from './routes/auth.js';
@@ -11,16 +10,16 @@ import touristsRoutes from './routes/tourists.js';
 import reviewsRoutes from './routes/reviews.js';
 import paymentsRoutes from './routes/payments.js';
 import adminRoutes from './routes/admin.js';
-import productsRoutes from './routes/products.js'; // Added products route
+import productsRoutes from './routes/products.js';
 import Contact from './models/Contact.js';
 import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth.js';
 
-// Remove dotenv.config() to avoid warnings on Vercel (env vars are injected directly)
 const app = express();
 
 const allowedOrigins = [
   'https://jeep-booking-frontend.vercel.app',
-  'http://localhost:3000'
+  'https://jeep-frontend-6jse350zd.vercel.app', // Add your frontend's Vercel URL
+  'http://localhost:3000' // Keep for local development
 ];
 
 app.use(cors({
@@ -28,6 +27,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.error(`CORS blocked for origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -46,7 +46,7 @@ app.use('/api/tourists', touristsRoutes);
 app.use('/api/reviews', reviewsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/products', productsRoutes); // Added products route
+app.use('/api/products', productsRoutes);
 
 // Route for fetching contact messages
 app.get('/api/admin/contact-messages', authenticateToken, adminMiddleware, async (req, res) => {
