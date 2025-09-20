@@ -5,13 +5,13 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env file in development or if .env exists
+// Load .env file only in development or if .env exists (skip in production/Vercel)
 const envPath = path.resolve(__dirname, '../.env');
 const result = dotenv.config({ path: envPath });
 if (result.error && result.error.code !== 'ENOENT') {
   console.error('Error loading .env file:', result.error);
 } else if (result.error) {
-  console.log('No .env file found; relying on environment variables (e.g., Railway).');
+  console.log('No .env file found; relying on environment variables (e.g., Vercel).');
 }
 
 // Validate required environment variables
