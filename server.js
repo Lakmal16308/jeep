@@ -21,8 +21,7 @@ const app = express();
 
 // CORS configuration
 const allowedOrigins = [
-  'https://jeep-frontend.vercel.app', // Frontend Vercel URL
-  'https://jeep-ten.vercel.app',     // Backend Vercel URL (if needed)
+  'https://jeep-frontend.vercel.app', // Correct frontend URL
   'http://localhost:3000'            // Local development
 ];
 
@@ -31,6 +30,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.error(`CORS error: Origin ${origin} not allowed`);
       callback(new Error('Not allowed by CORS'));
     }
   },
