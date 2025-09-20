@@ -17,7 +17,9 @@ import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth
 const app = express();
 
 const allowedOrigins = [
-  'https://jeep-frontend-6jse350zd.vercel.app', // Frontend Vercel URL
+  'https://jeep-frontend-e5zluf8qe.vercel.app', // Updated frontend Vercel URL
+  'https://jeep-frontend-6jse350zd.vercel.app', // Previous frontend URL
+  'https://jeep-booking-frontend.vercel.app', // Alias URL (if still used)
   'http://localhost:3000' // For local development
 ];
 
@@ -26,7 +28,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.error(`CORS blocked for origin: ${origin}`);
+      console.error(`[${new Date().toISOString()}] CORS blocked for origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -34,12 +36,13 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+app.use('/uploads', express.static(path.join(process.cwd(), 'Uploads'), {
   setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*'); // Allow all origins for static files
+    res.set('Access-Control-Allow-Origin', '*');
   }
 }));
 
@@ -59,7 +62,7 @@ app.get('/api/admin/contact-messages', authenticateToken, adminMiddleware, async
     const messages = await Contact.find().lean();
     res.json(messages);
   } catch (err) {
-    console.error('Error fetching contact messages:', err.message);
+    console.error(`[${new Date().toISOString()}] Error fetching contact messages: ${err.message}`);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -75,7 +78,7 @@ app.post('/api/contact', async (req, res) => {
     await contact.save();
     res.status(201).json({ message: 'Contact message submitted' });
   } catch (err) {
-    console.error('Error saving contact message:', err.message);
+    console.error(`[${new Date().toISOString()}] Error saving contact message: ${err.message}`);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -83,7 +86,7 @@ app.post('/api/contact', async (req, res) => {
 // MongoDB Connection
 mongoose.connect(env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err.message));
+  .catch(err => console.error(`[${new Date().toISOString()}] MongoDB connection error: ${err.message}`));
 
 // Export the app for Vercel serverless
 export default app;
