@@ -9,11 +9,12 @@ const router = express.Router();
 
 // Multer setup for file uploads
 const storage = multer.diskStorage({
-  destination: './uploads/',
+  destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
+
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
@@ -23,9 +24,21 @@ const upload = multer({
     if (extname && mimetype) {
       return cb(null, true);
     }
-    cb('Error: Images only (jpeg, jpg, png)!');
-  }
+    cb(new Error('Images only (jpeg, jpg, png)!'));
+  },
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
+
+// Clean image paths (remove leading slashes)
+const cleanImagePaths = (provider) => {
+  if (provider.profilePicture) {
+    provider.profilePicture = provider.profilePicture.replace(/^\/+/, '');
+  }
+  if (provider.photos && Array.isArray(provider.photos)) {
+    provider.photos = provider.photos.map(photo => photo.replace(/^\/+/, ''));
+  }
+  return provider;
+};
 
 // Get all approved providers (public)
 router.get('/', async (req, res) => {
@@ -35,8 +48,10 @@ router.get('/', async (req, res) => {
     const providers = await Provider.find(query)
       .limit(parseInt(limit) || 0)
       .lean();
-    console.log(`Fetched ${providers.length} providers (approved=${approved}, limit=${limit})`);
-    res.json(providers);
+    // Clean image paths for all providers
+    const cleanedProviders = providers.map(cleanImagePaths);
+    console.log(`Fetched ${cleanedProviders.length} providers (approved=${approved}, limit=${limit})`);
+    res.json(cleanedProviders);
   } catch (err) {
     console.error('Error fetching providers:', err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch providers' });
@@ -47,8 +62,10 @@ router.get('/', async (req, res) => {
 router.get('/admin', authenticateToken, isAdmin, async (req, res) => {
   try {
     const providers = await Provider.find().lean();
-    console.log(`Fetched ${providers.length} providers for admin`);
-    res.json(providers);
+    // Clean image paths for all providers
+    const cleanedProviders = providers.map(cleanImagePaths);
+    console.log(`Fetched ${cleanedProviders.length} providers for admin`);
+    res.json(cleanedProviders);
   } catch (err) {
     console.error('Error fetching providers for admin:', err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch providers' });
@@ -59,8 +76,10 @@ router.get('/admin', authenticateToken, isAdmin, async (req, res) => {
 router.get('/admin/pending', authenticateToken, isAdmin, async (req, res) => {
   try {
     const providers = await Provider.find({ approved: false }).lean();
-    console.log(`Fetched ${providers.length} pending providers for admin`);
-    res.json(providers);
+    // Clean image paths for all providers
+    const cleanedProviders = providers.map(cleanImagePaths);
+    console.log(`Fetched ${cleanedProviders.length} pending providers for admin`);
+    res.json(cleanedProviders);
   } catch (err) {
     console.error('Error fetching pending providers:', err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch pending providers' });
@@ -74,11 +93,11 @@ router.post('/admin', authenticateToken, isAdmin, upload.fields([
 ]), async (req, res) => {
   try {
     const { serviceName, fullName, email, contact, category, location, price, description, password } = req.body;
-    const profilePicture = req.files['profilePicture'] ? `/uploads/${req.files['profilePicture'][0].filename}` : null;
-    const photos = req.files['photos'] ? req.files['photos'].map(file => `/uploads/${file.filename}`) : [];
+    const profilePicture = req.files['profilePicture'] ? `uploads/${req.files['profilePicture'][0].filename}` : null;
+    const photos = req.files['photos'] ? req.files['photos'].map(file => `uploads/${file.filename}`) : [];
 
     if (!serviceName || !fullName || !email || !contact || !category || !location || !price || !description || !password || !profilePicture) {
-      console.error('Missing required fields:', req.body);
+      console.error('Missing required fields:', { body: req.body, files: req.files });
       return res.status(400).json({ error: 'All fields and profile picture are required' });
     }
 
@@ -97,9 +116,12 @@ router.post('/admin', authenticateToken, isAdmin, upload.fields([
       approved: true // Admin-added providers are auto-approved
     });
     console.log('Provider added:', provider._id);
-    res.json({ message: 'Provider added', provider });
+    res.json({ message: 'Provider added', provider: cleanImagePaths(provider.toObject()) });
   } catch (err) {
     console.error('Error adding provider:', err.message, err.stack);
+    if (err.message === 'Email already exists') {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
     res.status(500).json({ error: 'Server error: Failed to add provider' });
   }
 });
@@ -111,13 +133,17 @@ router.put('/admin/:id/approve', authenticateToken, isAdmin, async (req, res) =>
       console.error('Invalid provider ID:', req.params.id);
       return res.status(400).json({ error: 'Invalid Provider ID' });
     }
-    const provider = await Provider.findByIdAndUpdate(req.params.id, { approved: true }, { new: true }).lean();
+    const provider = await Provider.findByIdAndUpdate(
+      req.params.id,
+      { approved: true },
+      { new: true }
+    ).lean();
     if (!provider) {
       console.error('Provider not found:', req.params.id);
       return res.status(404).json({ error: 'Provider not found' });
     }
     console.log('Provider approved:', provider._id);
-    res.json({ message: 'Provider approved', provider });
+    res.json({ message: 'Provider approved', provider: cleanImagePaths(provider) });
   } catch (err) {
     console.error('Error approving provider:', req.params.id, err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to approve provider' });
@@ -157,7 +183,7 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Provider not found' });
     }
     console.log('Fetched provider:', provider._id);
-    res.json(provider);
+    res.json(cleanImagePaths(provider));
   } catch (err) {
     console.error('Error fetching provider:', req.params.id, err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch provider' });

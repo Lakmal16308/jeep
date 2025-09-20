@@ -2,8 +2,7 @@ import mongoose from 'mongoose';
 
 const reviewSchema = new mongoose.Schema({
   targetId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    refPath: 'reviewType', 
+    type: String, // Supports ObjectIds for services/tourists, strings for products
     required: true 
   },
   reviewerId: { 
@@ -15,7 +14,7 @@ const reviewSchema = new mongoose.Schema({
   comment: { type: String, required: true },
   reviewType: { 
     type: String, 
-    enum: ['service', 'tourist'], 
+    enum: ['service', 'product', 'tourist'], 
     required: true 
   },
   approved: { type: Boolean, default: false },

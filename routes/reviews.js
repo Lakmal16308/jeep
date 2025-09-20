@@ -10,14 +10,14 @@ import { isAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Submit a review (tourists review services, providers review tourists)
+// Submit a review (tourists review services/products, providers review tourists)
 router.post('/', authenticateToken, async (req, res) => {
   const { targetId, rating, comment, reviewType } = req.body;
   try {
     // Validate inputs
-    if (!targetId || !mongoose.Types.ObjectId.isValid(targetId)) {
-      console.error('Invalid targetId format:', targetId);
-      return res.status(400).json({ error: `Invalid Service or Tourist ID format: ${targetId}` });
+    if (!targetId) {
+      console.error('Missing targetId');
+      return res.status(400).json({ error: 'Target ID is required' });
     }
     if (!rating || rating < 1 || rating > 5) {
       console.error('Invalid rating:', rating);
@@ -27,28 +27,61 @@ router.post('/', authenticateToken, async (req, res) => {
       console.error('Comment is empty');
       return res.status(400).json({ error: 'Comment is required' });
     }
-    if (!['service', 'tourist'].includes(reviewType)) {
+    if (!['service', 'product', 'tourist'].includes(reviewType)) {
       console.error('Invalid reviewType:', reviewType);
-      return res.status(400).json({ error: 'Review type must be "service" or "tourist"' });
+      return res.status(400).json({ error: 'Review type must be "service", "product", or "tourist"' });
     }
 
     // Check user role and permissions
-    if (req.user.role === 'tourist' && reviewType === 'service') {
-      const provider = await Provider.findById(targetId);
-      if (!provider) {
-        console.error('Provider not found for targetId:', targetId);
-        return res.status(404).json({ error: `Service not found for ID: ${targetId}` });
-      }
-      const booking = await Booking.findOne({
-        touristId: req.user.id,
-        providerId: targetId,
-        status: 'confirmed'
-      });
-      if (!booking) {
-        console.error('No confirmed booking found for tourist', { userId: req.user.id, targetId });
-        return res.status(403).json({ error: `No confirmed booking found for service ID: ${targetId}` });
+    if (req.user.role === 'tourist') {
+      if (reviewType === 'service') {
+        if (!mongoose.Types.ObjectId.isValid(targetId)) {
+          console.error('Invalid service ID format:', targetId);
+          return res.status(400).json({ error: `Invalid Service ID format: ${targetId}` });
+        }
+        const provider = await Provider.findById(targetId);
+        if (!provider) {
+          console.error('Provider not found for targetId:', targetId);
+          return res.status(404).json({ error: `Service not found for ID: ${targetId}` });
+        }
+        const booking = await Booking.findOne({
+          touristId: req.user.id,
+          providerId: targetId,
+          status: 'confirmed'
+        });
+        if (!booking) {
+          console.error('No confirmed booking found for tourist', { userId: req.user.id, targetId });
+          return res.status(403).json({ error: `No confirmed booking found for service ID: ${targetId}` });
+        }
+      } else if (reviewType === 'product') {
+        // Validate product name
+        const validProducts = [
+          'Jeep Safari', 'Tuk Tuk Adventures', 'Catamaran Boat Ride', 'Village Cooking Experience',
+          'Traditional Village Lunch', 'Sundowners Cocktail', 'High Tea', 'Bullock Cart Ride',
+          'Budget Village Tour', 'Village Tour'
+        ];
+        if (!validProducts.includes(targetId)) {
+          console.error('Invalid product name:', targetId);
+          return res.status(400).json({ error: `Invalid Product: ${targetId}` });
+        }
+        const booking = await Booking.findOne({
+          touristId: req.user.id,
+          productType: targetId,
+          status: 'confirmed'
+        });
+        if (!booking) {
+          console.error('No confirmed booking found for tourist', { userId: req.user.id, targetId });
+          return res.status(403).json({ error: `No confirmed booking found for product: ${targetId}` });
+        }
+      } else {
+        console.error('Invalid reviewType for tourist', { role: req.user.role, reviewType });
+        return res.status(403).json({ error: 'Tourists can only review services or products' });
       }
     } else if (req.user.role === 'provider' && reviewType === 'tourist') {
+      if (!mongoose.Types.ObjectId.isValid(targetId)) {
+        console.error('Invalid tourist ID format:', targetId);
+        return res.status(400).json({ error: `Invalid Tourist ID format: ${targetId}` });
+      }
       const tourist = await Tourist.findById(targetId);
       if (!tourist) {
         console.error('Tourist not found:', targetId);
@@ -74,7 +107,7 @@ router.post('/', authenticateToken, async (req, res) => {
       rating,
       comment,
       reviewType,
-      approved: reviewType === 'service' // Auto-approve service reviews
+      approved: reviewType === 'service' || reviewType === 'product' // Auto-approve service and product reviews
     });
     console.log('Review submitted:', { reviewId: review._id, targetId, rating, reviewType });
     res.json({ message: 'Review submitted successfully', review });
@@ -84,56 +117,77 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all approved service reviews for home page
+// Get all approved service and product reviews for home page
 router.get('/all', async (req, res) => {
   try {
-    // Validate review documents before population
+    // Fetch service and product reviews
     const reviews = await Review.find({ 
-      reviewType: 'service', 
+      reviewType: { $in: ['service', 'product'] }, 
       approved: true,
       reviewerId: { $exists: true, $ne: null },
       targetId: { $exists: true, $ne: null }
     }).lean();
     
-    console.log(`Found ${reviews.length} service reviews before population`);
+    console.log(`Found ${reviews.length} reviews (service/product) before population`);
     
-    // Manually populate to handle errors gracefully
+    // Manually populate service reviews, pass through product reviews
     const populatedReviews = await Promise.all(reviews.map(async (review) => {
       try {
-        if (!mongoose.Types.ObjectId.isValid(review.reviewerId) || !mongoose.Types.ObjectId.isValid(review.targetId)) {
-          console.warn(`Skipping review ${review._id}: Invalid ObjectId`, {
-            reviewId: review._id,
-            reviewerId: review.reviewerId,
-            targetId: review.targetId
-          });
-          return null;
-        }
+        if (review.reviewType === 'service') {
+          if (!mongoose.Types.ObjectId.isValid(review.reviewerId) || !mongoose.Types.ObjectId.isValid(review.targetId)) {
+            console.warn(`Skipping service review ${review._id}: Invalid ObjectId`, {
+              reviewId: review._id,
+              reviewerId: review.reviewerId,
+              targetId: review.targetId
+            });
+            return null;
+          }
 
-        const reviewer = await Tourist.findById(review.reviewerId)
-          .select('fullName')
-          .lean();
-        const target = await Provider.findById(review.targetId)
-          .select('serviceName')
-          .lean();
-        
-        if (!reviewer || !reviewer.fullName || !target || !target.serviceName) {
-          console.warn(`Skipping review ${review._id}: Invalid reviewer or target`, {
-            reviewId: review._id,
-            reviewerId: review.reviewerId,
-            hasReviewer: !!reviewer,
-            hasFullName: reviewer?.fullName,
-            targetId: review.targetId,
-            hasTarget: !!target,
-            hasServiceName: target?.serviceName
-          });
-          return null;
-        }
+          const reviewer = await Tourist.findById(review.reviewerId)
+            .select('fullName')
+            .lean();
+          const target = await Provider.findById(review.targetId)
+            .select('serviceName')
+            .lean();
+          
+          if (!reviewer || !reviewer.fullName || !target || !target.serviceName) {
+            console.warn(`Skipping service review ${review._id}: Invalid reviewer or target`, {
+              reviewId: review._id,
+              reviewerId: review.reviewerId,
+              hasReviewer: !!reviewer,
+              hasFullName: reviewer?.fullName,
+              targetId: review.targetId,
+              hasTarget: !!target,
+              hasServiceName: target?.serviceName
+            });
+            return null;
+          }
 
-        return {
-          ...review,
-          reviewerId: { _id: reviewer._id, fullName: reviewer.fullName },
-          targetId: { _id: target._id, serviceName: target.serviceName }
-        };
+          return {
+            ...review,
+            reviewerId: { _id: reviewer._id, fullName: reviewer.fullName },
+            targetId: { _id: target._id, serviceName: target.serviceName }
+          };
+        } else {
+          // Product reviews: targetId is the product name, no population needed
+          const reviewer = await Tourist.findById(review.reviewerId)
+            .select('fullName')
+            .lean();
+          if (!reviewer || !reviewer.fullName) {
+            console.warn(`Skipping product review ${review._id}: Invalid reviewer`, {
+              reviewId: review._id,
+              reviewerId: review.reviewerId,
+              hasReviewer: !!reviewer,
+              hasFullName: reviewer?.fullName
+            });
+            return null;
+          }
+          return {
+            ...review,
+            reviewerId: { _id: reviewer._id, fullName: reviewer.fullName },
+            targetId: { serviceName: review.targetId } // Use targetId as serviceName for products
+          };
+        }
       } catch (err) {
         console.warn(`Error populating review ${review._id}:`, err.message);
         return null;
@@ -145,10 +199,10 @@ router.get('/all', async (req, res) => {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 6);
     
-    console.log(`Fetched ${filteredReviews.length} approved service reviews for home page`);
+    console.log(`Fetched ${filteredReviews.length} approved service/product reviews for home page`);
     res.json(filteredReviews);
   } catch (err) {
-    console.error('Error fetching all service reviews:', err.message, err.stack);
+    console.error('Error fetching all reviews:', err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch reviews' });
   }
 });
@@ -217,14 +271,44 @@ router.get('/admin/reviews', authenticateToken, isAdmin, async (req, res) => {
         path: 'reviewerId',
         select: 'fullName serviceName'
       })
-      .populate({
-        path: 'targetId',
-        select: 'serviceName fullName'
-      })
       .sort({ createdAt: -1 })
       .lean();
-    console.log(`Fetched ${reviews.length} reviews for admin`);
-    res.json(reviews);
+
+    // Manually handle population for targetId based on reviewType
+    const populatedReviews = await Promise.all(reviews.map(async (review) => {
+      try {
+        if (review.reviewType === 'service' || review.reviewType === 'tourist') {
+          const targetModel = review.reviewType === 'service' ? Provider : Tourist;
+          const target = await targetModel.findById(review.targetId)
+            .select(review.reviewType === 'service' ? 'serviceName' : 'fullName')
+            .lean();
+          if (!target) {
+            console.warn(`Skipping review ${review._id}: Target not found`, { targetId: review.targetId });
+            return null;
+          }
+          return {
+            ...review,
+            targetId: {
+              _id: target._id,
+              [review.reviewType === 'service' ? 'serviceName' : 'fullName']: target[review.reviewType === 'service' ? 'serviceName' : 'fullName']
+            }
+          };
+        } else {
+          // Product reviews: targetId is the product name
+          return {
+            ...review,
+            targetId: { serviceName: review.targetId }
+          };
+        }
+      } catch (err) {
+        console.warn(`Error populating review ${review._id}:`, err.message);
+        return null;
+      }
+    }));
+
+    const filteredReviews = populatedReviews.filter(review => review !== null);
+    console.log(`Fetched ${filteredReviews.length} reviews for admin`);
+    res.json(filteredReviews);
   } catch (err) {
     console.error('Error fetching all reviews for admin:', err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to fetch reviews' });
@@ -240,15 +324,41 @@ router.put('/admin/reviews/:id/approve', authenticateToken, isAdmin, async (req,
       return res.status(400).json({ error: `Invalid Review ID format: ${id}` });
     }
     const review = await Review.findByIdAndUpdate(id, { approved: true }, { new: true })
-      .populate('reviewerId', 'fullName serviceName')
-      .populate('targetId', 'serviceName fullName')
+      .populate({
+        path: 'reviewerId',
+        select: 'fullName serviceName'
+      })
       .lean();
     if (!review) {
       console.error('Review not found:', id);
       return res.status(404).json({ error: 'Review not found' });
     }
+
+    // Populate targetId based on reviewType
+    let populatedReview = review;
+    if (review.reviewType === 'service' || review.reviewType === 'tourist') {
+      const targetModel = review.reviewType === 'service' ? Provider : Tourist;
+      const target = await targetModel.findById(review.targetId)
+        .select(review.reviewType === 'service' ? 'serviceName' : 'fullName')
+        .lean();
+      if (target) {
+        populatedReview = {
+          ...review,
+          targetId: {
+            _id: target._id,
+            [review.reviewType === 'service' ? 'serviceName' : 'fullName']: target[review.reviewType === 'service' ? 'serviceName' : 'fullName']
+          }
+        };
+      }
+    } else {
+      populatedReview = {
+        ...review,
+        targetId: { serviceName: review.targetId }
+      };
+    }
+
     console.log('Review approved:', { reviewId: id });
-    res.json({ message: 'Review approved successfully', review });
+    res.json({ message: 'Review approved successfully', review: populatedReview });
   } catch (err) {
     console.error('Error approving review:', req.params.id, err.message, err.stack);
     res.status(500).json({ error: 'Server error: Failed to approve review' });
