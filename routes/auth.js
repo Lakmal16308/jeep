@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 const uploadsDir = process.env.NODE_ENV === 'production' ? '/tmp/Uploads' : path.join(__dirname, '..', 'Uploads');
 try {
   if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(UploadsDir, { recursive: true });
+    fs.mkdirSync(uploadsDir, { recursive: true });
     console.log(`[${new Date().toISOString()}] Created Uploads directory: ${uploadsDir}`);
   }
 } catch (err) {
