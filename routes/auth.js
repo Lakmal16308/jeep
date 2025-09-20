@@ -14,10 +14,14 @@ const router = express.Router();
 // Ensure Uploads directory exists
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '..', 'Uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log(`[${new Date().toISOString()}] Created Uploads directory: ${uploadsDir}`);
+const uploadsDir = process.env.NODE_ENV === 'production' ? '/tmp/Uploads' : path.join(__dirname, '..', 'Uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(UploadsDir, { recursive: true });
+    console.log(`[${new Date().toISOString()}] Created Uploads directory: ${uploadsDir}`);
+  }
+} catch (err) {
+  console.error(`[${new Date().toISOString()}] Failed to create Uploads directory: ${err.message}`);
 }
 
 // Multer configuration for file uploads
