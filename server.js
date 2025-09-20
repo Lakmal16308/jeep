@@ -17,12 +17,14 @@ import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth
 const app = express();
 
 const allowedOrigins = [
-  'https://jeep-frontend-e5zluf8qe.vercel.app', // Updated frontend Vercel URL
-  'https://jeep-frontend-6jse350zd.vercel.app', // Previous frontend URL
+  'https://jeep-frontend-ls7o1imkj.vercel.app', // New frontend URL
+  'https://jeep-frontend-e5zluf8qe.vercel.app', // Previous frontend URL
+  'https://jeep-frontend-6jse350zd.vercel.app', // Older frontend URL
   'https://jeep-booking-frontend.vercel.app', // Alias URL (if still used)
   'http://localhost:3000' // For local development
 ];
 
+// Use CORS middleware with dynamic origin checking
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -40,7 +42,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
-app.use('/uploads', express.static(path.join(process.cwd(), 'Uploads'), {
+app.use('/Uploads', express.static(path.join(process.cwd(), 'Uploads'), {
   setHeaders: (res) => {
     res.set('Access-Control-Allow-Origin', '*');
   }

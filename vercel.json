@@ -11,7 +11,7 @@
       "src": "/(.*)",
       "dest": "/server.js",
       "headers": {
-        "Access-Control-Allow-Origin": "https://jeep-frontend-e5zluf8qe.vercel.app,https://jeep-frontend-6jse350zd.vercel.app,https://jeep-booking-frontend.vercel.app,http://localhost:3000",
+        "Access-Control-Allow-Origin": "https://jeep-frontend-ls7o1imkj.vercel.app,https://jeep-frontend-e5zluf8qe.vercel.app,https://jeep-frontend-6jse350zd.vercel.app,https://jeep-booking-frontend.vercel.app,http://localhost:3000",
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type,Authorization",
         "Access-Control-Allow-Credentials": "true"
