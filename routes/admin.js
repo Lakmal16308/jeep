@@ -4,28 +4,34 @@ import mongoose from 'mongoose';
 import Provider from '../models/Provider.js';
 import Booking from '../models/Booking.js';
 import Tourist from '../models/Tourist.js';
-import Contact from '../models/Contact.js'; // Changed to Contact
+import Contact from '../models/Contact.js';
 import bcrypt from 'bcryptjs';
-import multer from 'multer';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const router = express.Router();
 
-// Multer configuration for file uploads
+// Ensure Uploads directory exists
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadsDir = path.join(__dirname, '..', 'Uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(UploadsDir, { recursive: true });
+  console.log(`[${new Date().toISOString()}] Created Uploads directory: ${uploadsDir}`);
+}
+
+// Multer configuration
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'Uploads/');
-  },
+  destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const filetypes = /jpeg|jpg|png/;
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
@@ -76,48 +82,52 @@ const PRICING_STRUCTURE = {
 
 // Middleware to verify admin
 const verifyAdmin = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    console.error('No token provided in Authorization header');
-    return res.status(401).json({ error: 'No token provided' });
+  const authHeader = req.headers.authorization;
+  console.log(`[${new Date().toISOString()}] Verifying admin token for ${req.method} ${req.path}, Authorization: ${authHeader || 'none'}`);
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error(`[${new Date().toISOString()}] No valid Bearer token provided`);
+    return res.status(401).json({ error: 'No valid Bearer token provided' });
   }
-  console.log('Verifying admin token:', token.substring(0, 20) + '...');
+  const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('Decoded admin token:', decoded);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
     if (decoded.role !== 'admin') {
-      console.error('Not authorized: Role is not admin:', decoded.role);
-      return res.status(403).json({ error: 'Not authorized' });
+      console.error(`[${new Date().toISOString()}] Not authorized: Role is ${decoded.role}`);
+      return res.status(403).json({ error: 'Not authorized: Admin only' });
     }
     req.user = decoded;
+    res.set({
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY'
+    });
     next();
   } catch (err) {
-    console.error('Token verification failed:', err.message);
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    console.error(`[${new Date().toISOString()}] Token verification failed: ${err.message}`);
+    return res.status(401).json({ error: err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token' });
   }
 };
 
 // Get pending providers
 router.get('/pending-providers', verifyAdmin, async (req, res) => {
   try {
-    const providers = await Provider.find({ approved: false });
-    console.log(`Fetched ${providers.length} pending providers`);
+    const providers = await Provider.find({ approved: false }).lean();
+    console.log(`[${new Date().toISOString()}] Fetched ${providers.length} pending providers`);
     return res.json(providers);
   } catch (err) {
-    console.error('Error fetching pending providers:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error fetching pending providers:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Get all providers
 router.get('/providers', verifyAdmin, async (req, res) => {
   try {
-    const providers = await Provider.find();
-    console.log(`Fetched ${providers.length} providers`);
+    const providers = await Provider.find().lean();
+    console.log(`[${new Date().toISOString()}] Fetched ${providers.length} providers`);
     return res.json(providers);
   } catch (err) {
-    console.error('Error fetching providers:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error fetching providers:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -128,25 +138,27 @@ router.post('/providers', verifyAdmin, upload.fields([
 ]), async (req, res) => {
   const { serviceName, fullName, email, contact, category, location, price, description, password } = req.body;
   try {
+    console.log(`[${new Date().toISOString()}] Adding provider:`, { serviceName, email });
     if (!serviceName || !fullName || !email || !contact || !category || !location || !price || !description || !password) {
-      console.error('Missing required fields for provider');
+      console.error(`[${new Date().toISOString()}] Missing required fields:`, req.body);
       return res.status(400).json({ error: 'All fields are required' });
     }
     if (!req.files || !req.files.profilePicture || !req.files.photos) {
-      console.error('Missing profile picture or photos');
+      console.error(`[${new Date().toISOString()}] Missing file uploads`);
       return res.status(400).json({ error: 'Profile picture and at least one photo are required' });
     }
-
+    if (password.length < 6) {
+      console.error(`[${new Date().toISOString()}] Password too short: ${password.length} characters`);
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
     const existingProvider = await Provider.findOne({ email });
     if (existingProvider) {
-      console.error('Email already exists:', email);
+      console.error(`[${new Date().toISOString()}] Email already exists: ${email}`);
       return res.status(400).json({ error: 'Email already exists' });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
-    const profilePicture = req.files.profilePicture[0].path.replace(/\\/g, '/');
-    const photos = req.files.photos.map(file => file.path.replace(/\\/g, '/'));
-
+    const profilePicture = req.files.profilePicture[0].path.replace(/\\/g, '/').split('Uploads/').pop();
+    const photos = req.files.photos.map(file => file.path.replace(/\\/g, '/').split('Uploads/').pop());
     const provider = await Provider.create({
       serviceName,
       fullName,
@@ -158,14 +170,14 @@ router.post('/providers', verifyAdmin, upload.fields([
       description,
       password: hashedPassword,
       approved: true,
-      profilePicture,
-      photos
+      profilePicture: `Uploads/${profilePicture}`,
+      photos: photos.map(photo => `Uploads/${photo}`)
     });
-    console.log('Provider added:', provider._id);
-    return res.json({ message: 'Provider added', provider });
+    console.log(`[${new Date().toISOString()}] Provider added: ${provider._id}`);
+    return res.status(201).json({ message: 'Provider added', provider: provider.toObject() });
   } catch (err) {
-    console.error('Provider add error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Provider add error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -175,27 +187,35 @@ router.put('/providers/:id', verifyAdmin, upload.fields([
   { name: 'photos', maxCount: 5 }
 ]), async (req, res) => {
   const { id } = req.params;
-  const updateData = req.body;
+  const updateData = { ...req.body };
   try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${new Date().toISOString()}] Invalid provider ID: ${id}`);
+      return res.status(400).json({ error: 'Invalid Provider ID' });
+    }
     if (updateData.password) {
+      if (updateData.password.length < 6) {
+        console.error(`[${new Date().toISOString()}] Password too short: ${updateData.password.length} characters`);
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
     if (req.files.profilePicture) {
-      updateData.profilePicture = req.files.profilePicture[0].path.replace(/\\/g, '/');
+      updateData.profilePicture = `Uploads/${req.files.profilePicture[0].path.replace(/\\/g, '/').split('Uploads/').pop()}`;
     }
     if (req.files.photos) {
-      updateData.photos = req.files.photos.map(file => file.path.replace(/\\/g, '/'));
+      updateData.photos = req.files.photos.map(file => `Uploads/${file.path.replace(/\\/g, '/').split('Uploads/').pop()}`);
     }
-    const provider = await Provider.findByIdAndUpdate(id, updateData, { new: true });
+    const provider = await Provider.findByIdAndUpdate(id, updateData, { new: true }).lean();
     if (!provider) {
-      console.error('Provider not found:', id);
+      console.error(`[${new Date().toISOString()}] Provider not found: ${id}`);
       return res.status(404).json({ error: 'Provider not found' });
     }
-    console.log('Provider updated:', id);
+    console.log(`[${new Date().toISOString()}] Provider updated: ${id}`);
     return res.json({ message: 'Provider updated', provider });
   } catch (err) {
-    console.error('Provider update error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Provider update error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -203,36 +223,44 @@ router.put('/providers/:id', verifyAdmin, upload.fields([
 router.delete('/providers/:id', verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${new Date().toISOString()}] Invalid provider ID: ${id}`);
+      return res.status(400).json({ error: 'Invalid Provider ID' });
+    }
     const provider = await Provider.findByIdAndDelete(id);
     if (!provider) {
-      console.error('Provider not found:', id);
+      console.error(`[${new Date().toISOString()}] Provider not found: ${id}`);
       return res.status(404).json({ error: 'Provider not found' });
     }
-    console.log('Provider deleted:', id);
+    console.log(`[${new Date().toISOString()}] Provider deleted: ${id}`);
     return res.json({ message: 'Provider deleted' });
   } catch (err) {
-    console.error('Provider delete error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Provider delete error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Approve provider
 router.put('/providers/:id/approve', verifyAdmin, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.error(`[${new Date().toISOString()}] Invalid provider ID: ${req.params.id}`);
+      return res.status(400).json({ error: 'Invalid Provider ID' });
+    }
     const provider = await Provider.findByIdAndUpdate(
       req.params.id,
       { approved: true },
       { new: true }
-    );
+    ).lean();
     if (!provider) {
-      console.error('Provider not found:', req.params.id);
+      console.error(`[${new Date().toISOString()}] Provider not found: ${req.params.id}`);
       return res.status(404).json({ error: 'Provider not found' });
     }
-    console.log('Provider approved:', req.params.id);
+    console.log(`[${new Date().toISOString()}] Provider approved: ${req.params.id}`);
     return res.json({ message: 'Provider approved', provider });
   } catch (err) {
-    console.error('Error approving provider:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error approving provider:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -250,11 +278,11 @@ router.get('/bookings/admin', verifyAdmin, async (req, res) => {
       })
       .sort({ date: -1 })
       .lean();
-    console.log(`Fetched ${bookings.length} bookings for admin`);
+    console.log(`[${new Date().toISOString()}] Fetched ${bookings.length} bookings for admin`);
     return res.json(bookings);
   } catch (err) {
-    console.error('Error fetching bookings:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error fetching bookings:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -262,31 +290,31 @@ router.get('/bookings/admin', verifyAdmin, async (req, res) => {
 router.post('/bookings/admin', verifyAdmin, async (req, res) => {
   const { providerId, touristId, productType, date, time, adults, children, status, totalPrice, specialNotes } = req.body;
   try {
-    console.log('Adding booking:', { providerId, productType, adults, children, totalPrice });
+    console.log(`[${new Date().toISOString()}] Adding booking:`, { providerId, productType, adults, children });
     if (!touristId || !date || !time || !adults) {
-      console.error('Missing required fields:', { touristId, date, time, adults });
+      console.error(`[${new Date().toISOString()}] Missing required fields:`, req.body);
       return res.status(400).json({ error: 'Tourist ID, Date, Time, and Adults are required' });
     }
     if (providerId && productType) {
-      console.error('Cannot specify both providerId and productType');
+      console.error(`[${new Date().toISOString()}] Cannot specify both providerId and productType`);
       return res.status(400).json({ error: 'Cannot specify both providerId and productType' });
     }
     if (providerId && !mongoose.Types.ObjectId.isValid(providerId)) {
-      console.error('Invalid providerId:', providerId);
+      console.error(`[${new Date().toISOString()}] Invalid providerId: ${providerId}`);
       return res.status(400).json({ error: 'Invalid Provider ID' });
     }
     if (!mongoose.Types.ObjectId.isValid(touristId)) {
-      console.error('Invalid touristId:', touristId);
+      console.error(`[${new Date().toISOString()}] Invalid touristId: ${touristId}`);
       return res.status(400).json({ error: 'Invalid Tourist ID' });
     }
     const tourist = await Tourist.findById(touristId);
     if (!tourist) {
-      console.error('Tourist not found:', touristId);
+      console.error(`[${new Date().toISOString()}] Tourist not found: ${touristId}`);
       return res.status(404).json({ error: 'Tourist not found' });
     }
     const bookingData = {
       touristId,
-      date,
+      date: new Date(date),
       time,
       adults: Number(adults),
       children: Number(children || 0),
@@ -296,7 +324,7 @@ router.post('/bookings/admin', verifyAdmin, async (req, res) => {
     if (providerId) {
       const provider = await Provider.findById(providerId);
       if (!provider) {
-        console.error('Provider not found:', providerId);
+        console.error(`[${new Date().toISOString()}] Provider not found: ${providerId}`);
         return res.status(404).json({ error: 'Provider not found' });
       }
       bookingData.providerId = providerId;
@@ -304,24 +332,27 @@ router.post('/bookings/admin', verifyAdmin, async (req, res) => {
     } else if (productType) {
       const pricing = PRICING_STRUCTURE[productType];
       if (!pricing) {
-        console.error('No pricing for product:', productType);
+        console.error(`[${new Date().toISOString()}] No pricing for product: ${productType}`);
         return res.status(400).json({ error: 'Invalid product type or no pricing available' });
       }
       const totalPersons = Number(adults) + Number(children || 0);
       const tier = pricing.find(tier => totalPersons >= tier.min && totalPersons <= tier.max);
       if (!tier) {
-        console.error('No pricing tier for:', { productType, totalPersons });
+        console.error(`[${new Date().toISOString()}] No pricing tier for:`, { productType, totalPersons });
         return res.status(400).json({ error: `No pricing tier for ${totalPersons} persons` });
       }
       bookingData.productType = productType;
       bookingData.totalPrice = totalPersons * tier.price;
+    } else {
+      console.error(`[${new Date().toISOString()}] Either providerId or productType is required`);
+      return res.status(400).json({ error: 'Either providerId or productType is required' });
     }
     const booking = await Booking.create(bookingData);
-    console.log('Booking added by admin:', booking._id, 'Total Price:', booking.totalPrice);
-    return res.json({ message: 'Booking added', booking });
+    console.log(`[${new Date().toISOString()}] Booking added: ${booking._id}, Total Price: ${booking.totalPrice}`);
+    return res.status(201).json({ message: 'Booking added', booking });
   } catch (err) {
-    console.error('Booking add error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Booking add error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -330,7 +361,7 @@ router.put('/bookings/admin/:id/approve', verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      console.error('Invalid booking ID:', id);
+      console.error(`[${new Date().toISOString()}] Invalid booking ID: ${id}`);
       return res.status(400).json({ error: 'Invalid Booking ID' });
     }
     const booking = await Booking.findByIdAndUpdate(
@@ -348,14 +379,14 @@ router.put('/bookings/admin/:id/approve', verifyAdmin, async (req, res) => {
       })
       .lean();
     if (!booking) {
-      console.error('Booking not found:', id);
+      console.error(`[${new Date().toISOString()}] Booking not found: ${id}`);
       return res.status(404).json({ error: 'Booking not found' });
     }
-    console.log('Booking approved:', id, 'Total Price:', booking.totalPrice);
+    console.log(`[${new Date().toISOString()}] Booking approved: ${id}, Total Price: ${booking.totalPrice}`);
     return res.json({ message: 'Booking approved', booking });
   } catch (err) {
-    console.error('Booking approve error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Booking approve error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -364,31 +395,31 @@ router.delete('/bookings/admin/:id', verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      console.error('Invalid booking ID:', id);
+      console.error(`[${new Date().toISOString()}] Invalid booking ID: ${id}`);
       return res.status(400).json({ error: 'Invalid Booking ID' });
     }
     const booking = await Booking.findByIdAndDelete(id);
     if (!booking) {
-      console.error('Booking not found:', id);
+      console.error(`[${new Date().toISOString()}] Booking not found: ${id}`);
       return res.status(404).json({ error: 'Booking not found' });
     }
-    console.log('Booking deleted:', id);
+    console.log(`[${new Date().toISOString()}] Booking deleted: ${id}`);
     return res.json({ message: 'Booking deleted' });
   } catch (err) {
-    console.error('Booking delete error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Booking delete error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Get all tourists
 router.get('/tourists', verifyAdmin, async (req, res) => {
   try {
-    const tourists = await Tourist.find();
-    console.log(`Fetched ${tourists.length} tourists`);
+    const tourists = await Tourist.find().lean();
+    console.log(`[${new Date().toISOString()}] Fetched ${tourists.length} tourists`);
     return res.json(tourists);
   } catch (err) {
-    console.error('Error fetching tourists:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error fetching tourists:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -396,45 +427,56 @@ router.get('/tourists', verifyAdmin, async (req, res) => {
 router.post('/tourists', verifyAdmin, async (req, res) => {
   const { fullName, email, password, country } = req.body;
   try {
+    console.log(`[${new Date().toISOString()}] Adding tourist:`, { email });
     if (!fullName || !email || !password || !country) {
-      console.error('Missing required fields for tourist');
+      console.error(`[${new Date().toISOString()}] Missing required fields:`, req.body);
       return res.status(400).json({ error: 'All fields are required' });
     }
-
+    if (password.length < 6) {
+      console.error(`[${new Date().toISOString()}] Password too short: ${password.length} characters`);
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
     const existingTourist = await Tourist.findOne({ email });
     if (existingTourist) {
-      console.error('Email already exists:', email);
+      console.error(`[${new Date().toISOString()}] Email already exists: ${email}`);
       return res.status(400).json({ error: 'Email already exists' });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
     const tourist = await Tourist.create({ fullName, email, password: hashedPassword, country });
-    console.log('Tourist added:', tourist._id);
-    return res.json({ message: 'Tourist added', tourist });
+    console.log(`[${new Date().toISOString()}] Tourist added: ${tourist._id}`);
+    return res.status(201).json({ message: 'Tourist added', tourist: tourist.toObject() });
   } catch (err) {
-    console.error('Tourist add error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Tourist add error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Update tourist
 router.put('/tourists/:id', verifyAdmin, async (req, res) => {
   const { id } = req.params;
-  const updateData = req.body;
+  const updateData = { ...req.body };
   try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${new Date().toISOString()}] Invalid tourist ID: ${id}`);
+      return res.status(400).json({ error: 'Invalid Tourist ID' });
+    }
     if (updateData.password) {
+      if (updateData.password.length < 6) {
+        console.error(`[${new Date().toISOString()}] Password too short: ${updateData.password.length} characters`);
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
-    const tourist = await Tourist.findByIdAndUpdate(id, updateData, { new: true });
+    const tourist = await Tourist.findByIdAndUpdate(id, updateData, { new: true }).lean();
     if (!tourist) {
-      console.error('Tourist not found:', id);
+      console.error(`[${new Date().toISOString()}] Tourist not found: ${id}`);
       return res.status(404).json({ error: 'Tourist not found' });
     }
-    console.log('Tourist updated:', id);
+    console.log(`[${new Date().toISOString()}] Tourist updated: ${id}`);
     return res.json({ message: 'Tourist updated', tourist });
   } catch (err) {
-    console.error('Tourist update error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Tourist update error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -442,28 +484,32 @@ router.put('/tourists/:id', verifyAdmin, async (req, res) => {
 router.delete('/tourists/:id', verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.error(`[${new Date().toISOString()}] Invalid tourist ID: ${id}`);
+      return res.status(400).json({ error: 'Invalid Tourist ID' });
+    }
     const tourist = await Tourist.findByIdAndDelete(id);
     if (!tourist) {
-      console.error('Tourist not found:', id);
+      console.error(`[${new Date().toISOString()}] Tourist not found: ${id}`);
       return res.status(404).json({ error: 'Tourist not found' });
     }
-    console.log('Tourist deleted:', id);
+    console.log(`[${new Date().toISOString()}] Tourist deleted: ${id}`);
     return res.json({ message: 'Tourist deleted' });
   } catch (err) {
-    console.error('Tourist delete error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Tourist delete error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
 // Get all contact messages
 router.get('/contact-messages', verifyAdmin, async (req, res) => {
   try {
-    const messages = await Contact.find().sort({ createdAt: -1 });
-    console.log(`Fetched ${messages.length} contact messages`);
+    const messages = await Contact.find().sort({ createdAt: -1 }).lean();
+    console.log(`[${new Date().toISOString()}] Fetched ${messages.length} contact messages`);
     return res.json(messages);
   } catch (err) {
-    console.error('Error fetching contact messages:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error fetching contact messages:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -472,19 +518,19 @@ router.delete('/contact-messages/:id', verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      console.error('Invalid contact message ID:', id);
+      console.error(`[${new Date().toISOString()}] Invalid contact message ID: ${id}`);
       return res.status(400).json({ error: 'Invalid Contact Message ID' });
     }
     const message = await Contact.findByIdAndDelete(id);
     if (!message) {
-      console.error('Contact message not found:', id);
+      console.error(`[${new Date().toISOString()}] Contact message not found: ${id}`);
       return res.status(404).json({ error: 'Contact message not found' });
     }
-    console.log('Contact message deleted:', id);
+    console.log(`[${new Date().toISOString()}] Contact message deleted: ${id}`);
     return res.json({ message: 'Contact message deleted' });
   } catch (err) {
-    console.error('Contact message delete error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Contact message delete error:`, err.message, err.stack);
+    return res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 

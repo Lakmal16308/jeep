@@ -13,15 +13,26 @@ import paymentsRoutes from './routes/payments.js';
 import adminRoutes from './routes/admin.js';
 import productsRoutes from './routes/products.js';
 import Contact from './models/Contact.js';
-import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth.js';
+import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
 
 const app = express();
 
-// CORS configuration - Allow all origins for debugging
+// CORS configuration - Specify allowed origins
+const allowedOrigins = [
+  process.env.NODE_ENV === 'production' 
+    ? 'https://jeep-booking-frontend.vercel.app' 
+    : 'http://localhost:3000'
+];
 app.use(cors({
-  origin: '*', // Allow all origins (temporary for debugging)
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -42,17 +53,6 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/products', productsRoutes);
-
-// Route for fetching contact messages
-app.get('/api/admin/contact-messages', authenticateToken, adminMiddleware, async (req, res) => {
-  try {
-    const messages = await Contact.find().lean();
-    res.json(messages);
-  } catch (err) {
-    console.error('Error fetching contact messages:', err.message);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
 // Route for submitting contact messages
 app.post('/api/contact', async (req, res) => {
