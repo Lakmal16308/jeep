@@ -17,9 +17,17 @@ import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
 
+// Validate critical environment variables
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error(`[${new Date().toISOString()}] Missing environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
 const app = express();
 
-// CORS configuration - Specify allowed origins
+// CORS configuration
 const allowedOrigins = [
   process.env.NODE_ENV === 'production' 
     ? 'https://jeep-booking-frontend.vercel.app' 
@@ -27,10 +35,15 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    try {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS policy violation: Origin ${origin} not allowed`));
+      }
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] CORS error: ${err.message}`);
+      callback(err);
     }
   },
   credentials: true,
@@ -42,7 +55,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
-app.use('/Uploads', express.static(path.join(process.cwd(), 'Uploads')));
+// Use /tmp for uploads in serverless environment
+const uploadsDir = process.env.NODE_ENV === 'production' ? '/tmp/Uploads' : path.join(process.cwd(), 'Uploads');
+app.use('/Uploads', express.static(uploadsDir));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -59,14 +74,15 @@ app.post('/api/contact', async (req, res) => {
   try {
     const { name, email, message } = req.body;
     if (!name || !email || !message) {
+      console.error(`[${new Date().toISOString()}] Missing required fields in /api/contact:`, req.body);
       return res.status(400).json({ error: 'All fields are required' });
     }
     const contact = new Contact({ name, email, message });
     await contact.save();
     res.status(201).json({ message: 'Contact message submitted' });
   } catch (err) {
-    console.error('Error saving contact message:', err.message);
-    res.status(500).json({ error: 'Server error' });
+    console.error(`[${new Date().toISOString()}] Error saving contact message: ${err.message}`, err.stack);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 
@@ -75,15 +91,35 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Backend is running' });
 });
 
-// MongoDB Connection
-mongoose.connect(env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err.message));
+// MongoDB Connection with retry logic
+const connectWithRetry = async (retries = 5, delay = 3000) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await mongoose.connect(env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000
+      });
+      console.log(`[${new Date().toISOString()}] Connected to MongoDB`);
+      return;
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] MongoDB connection attempt ${i + 1} failed: ${err.message}`);
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  console.error(`[${new Date().toISOString()}] Failed to connect to MongoDB after ${retries} attempts`);
+  process.exit(1);
+};
+
+// Initialize MongoDB connection
+connectWithRetry();
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error(`[${new Date().toISOString()}] Server error on ${req.method} ${req.path}: ${err.message}`, err.stack);
+  res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
+// Export for Vercel serverless
 export default app;
