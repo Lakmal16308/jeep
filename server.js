@@ -16,25 +16,19 @@ import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth
 
 const app = express();
 
-const allowedOrigins = [
-  'https://jeep-frontend-ls7o1imkj.vercel.app', // New frontend URL
-  'https://jeep-frontend-e5zluf8qe.vercel.app', // Previous frontend URL
-  'https://jeep-frontend-6jse350zd.vercel.app', // Older frontend URL
-  'https://jeep-booking-frontend.vercel.app', // Alias URL (if still used)
-  'http://localhost:3000' // For local development
-];
+// const allowedOrigins = [
+//   // 'https://jeep-frontend-ls7o1imkj.vercel.app', // New frontend URL
+//   // 'https://jeep-frontend-e5zluf8qe.vercel.app', // Previous frontend URL
+//   // 'https://jeep-frontend-6jse350zd.vercel.app', // Older frontend URL
+//   // 'https://jeep-booking-frontend.vercel.app', // Alias URL (if still used)
+//   // 'http://localhost:3000' // For local development
+
+// ];
 
 // Use CORS middleware with dynamic origin checking
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.error(`[${new Date().toISOString()}] CORS blocked for origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
+  origin: "*",
+  credentials: false,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
