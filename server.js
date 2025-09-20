@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import env from './config/env.js';
 import authRoutes from './routes/auth.js';
 import providersRoutes from './routes/providers.js';
@@ -55,8 +56,21 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
-// Use /tmp for uploads in serverless environment
+
+// Handle favicon requests to prevent crashes
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/favicon.png', (req, res) => res.status(204).end());
+
+// Set up Uploads directory
 const uploadsDir = process.env.NODE_ENV === 'production' ? '/tmp/Uploads' : path.join(process.cwd(), 'Uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log(`[${new Date().toISOString()}] Created Uploads directory: ${uploadsDir}`);
+  }
+} catch (err) {
+  console.error(`[${new Date().toISOString()}] Failed to create Uploads directory: ${err.message}`);
+}
 app.use('/Uploads', express.static(uploadsDir));
 
 // Routes
