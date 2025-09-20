@@ -1,6 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import cors from 'cors'; // Import the cors package
+import cors from 'cors';
 import path from 'path';
 import env from './config/env.js';
 import authRoutes from './routes/auth.js';
@@ -17,17 +17,16 @@ import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth
 const app = express();
 
 const allowedOrigins = [
-  'https://jeep-frontend-e5zluf8qe.vercel.app', // Your current frontend Vercel URL (update if it changes)
+  'https://jeep-frontend-6jse350zd.vercel.app', // Frontend Vercel URL
   'http://localhost:3000' // For local development
 ];
 
-// Use the cors package middleware (simpler and more reliable on Vercel)
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.error(`[${new Date().toISOString()}] CORS blocked for origin: ${origin}`);
+      console.error(`CORS blocked for origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -35,13 +34,12 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*'); // Allow all for static images
+    res.set('Access-Control-Allow-Origin', '*'); // Allow all origins for static files
   }
 }));
 
