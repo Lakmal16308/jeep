@@ -19,23 +19,9 @@ dotenv.config();
 
 const app = express();
 
-// CORS configuration
-const allowedOrigins = [
-  'https://jeep-frontend-i9xppceuz.vercel.app', // Current frontend deployment
-  'https://jeep-frontend-dvrohn5w0.vercel.app', // Additional frontend URL
-  'https://jeep-frontend.vercel.app',          // Previous frontend URL
-  'http://localhost:3000'                      // Local development
-];
-
+// CORS configuration - Allow all origins for debugging
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.error(`CORS error: Origin ${origin} not allowed`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: '*', // Allow all origins (temporary for debugging)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
