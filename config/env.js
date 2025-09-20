@@ -30,6 +30,8 @@ if (missingVars.length > 0) {
   console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
   if (process.env.NODE_ENV !== 'production') {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  } else {
+    console.warn('Running in production with missing vars—check Vercel dashboard.');
   }
 }
 
