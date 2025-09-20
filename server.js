@@ -17,9 +17,9 @@ import { authenticateToken, isAdmin as adminMiddleware } from './middleware/auth
 const app = express();
 
 const allowedOrigins = [
-  'https://jeep-booking-frontend.vercel.app',
-  'https://jeep-frontend-6jse350zd.vercel.app', // Add your frontend's Vercel URL
-  'http://localhost:3000' // Keep for local development
+  'https://jeep-frontend-6jse350zd.vercel.app', // Frontend Vercel URL
+  'https://jeep-booking-frontend.vercel.app', // Previous frontend URL (if still used)
+  'http://localhost:3000' // For local development
 ];
 
 app.use(cors({
@@ -31,12 +31,18 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.raw({ type: 'application/json', limit: '10mb' }));
-app.use('/Uploads', express.static(path.join(process.cwd(), 'Uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*'); // Allow all origins for static files
+  }
+}));
 
 // Routes
 app.use('/api/auth', authRoutes);
