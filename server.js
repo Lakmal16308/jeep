@@ -21,8 +21,9 @@ const app = express();
 
 // CORS configuration
 const allowedOrigins = [
-  'https://jeep-frontend.vercel.app', // Correct frontend URL
-  'http://localhost:3000'            // Local development
+  'https://jeep-frontend-dvrohn5w0.vercel.app', // New frontend URL
+  'https://jeep-frontend.vercel.app',          // Previous frontend URL (if still used)
+  'http://localhost:3000'                      // Local development
 ];
 
 app.use(cors({
